@@ -1,0 +1,6 @@
+Package name: ng.com.mkmovies.app
+Website: https://mkmovies.com.ng
+Version: 1.3.0 (code 4)
+Notifications: enabled
+Normal app orientation: portrait
+Offline/Pull refresh: provided by PWA plugin v1.5
