@@ -63,3 +63,7 @@ base64 -w 0 mk-movies-release-key.jks
 ## Important
 
 For notifications, users must tap **Enable movie alerts** once inside the website/app and allow notifications. New movie notifications are sent by WordPress when a movie is first published.
+
+
+## v1.7 dependency fix
+This pack uses androidbrowserhelper 2.5.0 to avoid AndroidX browser/core versions that require compileSdk 36.
