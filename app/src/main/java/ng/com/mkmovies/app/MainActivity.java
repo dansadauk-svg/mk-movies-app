@@ -78,6 +78,10 @@ public class MainActivity extends Activity {
             }
             String extra = intent.getStringExtra("url");
             if (extra != null && extra.startsWith("http")) return extra;
+            extra = intent.getStringExtra("open_url");
+            if (extra != null && extra.startsWith("http")) return extra;
+            extra = intent.getStringExtra("gcm.notification.link");
+            if (extra != null && extra.startsWith("http")) return extra;
         }
         return HOME_URL;
     }
