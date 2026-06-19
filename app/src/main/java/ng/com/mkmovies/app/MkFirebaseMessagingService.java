@@ -7,7 +7,6 @@ import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.net.Uri;
 import android.os.Build;
 import android.util.Log;
 
@@ -59,9 +58,8 @@ public class MkFirebaseMessagingService extends FirebaseMessagingService {
             return;
         }
 
-        Intent intent = new Intent(this, com.google.androidbrowserhelper.trusted.LauncherActivity.class);
-        intent.setAction(Intent.ACTION_VIEW);
-        intent.setData(Uri.parse(url == null || url.isEmpty() ? "https://mkmovies.com.ng/" : url));
+        Intent intent = new Intent(this, MainActivity.class);
+        intent.putExtra("url", url == null || url.isEmpty() ? "https://mkmovies.com.ng/" : url);
         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
 
         PendingIntent pendingIntent = PendingIntent.getActivity(

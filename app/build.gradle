@@ -15,8 +15,13 @@ android {
         applicationId 'ng.com.mkmovies.app'
         minSdk 23
         targetSdk 35
-        versionCode 8
-        versionName '1.7.0'
+        versionCode 9
+        versionName '2.1.0'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
     }
 
     signingConfigs {
@@ -38,18 +43,12 @@ android {
 
 configurations.configureEach {
     resolutionStrategy {
-        // Keep all transitive AndroidX versions compatible with compileSdk 35 and Android Gradle Plugin 8.7.3.
-        force 'androidx.browser:browser:1.4.0'
-        force 'androidx.core:core:1.9.0'
+        force 'androidx.core:core:1.13.1'
     }
 }
 
 dependencies {
-    // 2.5.0 is stable and uses older AndroidX dependencies compatible with compileSdk 35.
-    implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.5.0'
-
-    // Native Firebase Messaging for real MK Movies app notifications.
     implementation 'com.google.firebase:firebase-messaging:24.0.0'
-    implementation 'androidx.core:core:1.9.0'
+    implementation 'androidx.core:core:1.13.1'
+    implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
 }
-
