@@ -3,6 +3,9 @@
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowActionBar">false</item>
         <item name="android:windowBackground">@color/backgroundColor</item>
+        <item name="android:windowSplashScreenBackground">@color/backgroundColor</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/backgroundColor</item>
         <item name="android:fontFamily">sans</item>
         <item name="android:colorAccent">#FF6B00</item>
         <item name="android:colorBackground">#FFFFFF</item>

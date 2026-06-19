@@ -59,6 +59,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        configureSystemBars();
         createNotificationChannel();
         setupWebView();
         requestNotificationPermissionIfNeeded();
@@ -81,9 +82,38 @@ public class MainActivity extends Activity {
         return HOME_URL;
     }
 
+    private void configureSystemBars() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            getWindow().setStatusBarColor(Color.WHITE);
+            getWindow().setNavigationBarColor(Color.WHITE);
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            int flags = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+            }
+            getWindow().getDecorView().setSystemUiVisibility(flags);
+        }
+    }
+
+    private void applySafeAreaForCameraCutout(View root) {
+        if (Build.VERSION.SDK_INT >= 35) {
+            root.setOnApplyWindowInsetsListener((view, insets) -> {
+                int top = insets.getSystemWindowInsetTop();
+                int bottom = insets.getSystemWindowInsetBottom();
+                int left = insets.getSystemWindowInsetLeft();
+                int right = insets.getSystemWindowInsetRight();
+                view.setPadding(left, top, right, bottom);
+                return insets;
+            });
+            root.post(root::requestApplyInsets);
+        }
+    }
+
     private void setupWebView() {
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.WHITE);
+        applySafeAreaForCameraCutout(root);
 
         swipeRefreshLayout = new SwipeRefreshLayout(this);
         webView = new WebView(this);
