@@ -8,6 +8,7 @@ import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.pm.ActivityInfo;
 import android.graphics.Color;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
@@ -53,6 +54,11 @@ public class MainActivity extends Activity {
     private ProgressBar topProgressBar;
     private ProgressBar splashProgressBar;
     private FrameLayout splashOverlay;
+    private FrameLayout rootLayout;
+    private View customFullscreenView;
+    private WebChromeClient.CustomViewCallback customViewCallback;
+    private int originalSystemUiVisibility;
+    private int originalOrientation;
     private boolean firstPageLoaded = false;
     private boolean offlineToastShown = false;
 
@@ -116,6 +122,7 @@ public class MainActivity extends Activity {
 
     private void setupWebView() {
         FrameLayout root = new FrameLayout(this);
+        rootLayout = root;
         root.setBackgroundColor(Color.WHITE);
         applySafeAreaForCameraCutout(root);
 
@@ -258,6 +265,49 @@ public class MainActivity extends Activity {
             }
 
             @Override
+            public void onShowCustomView(View view, CustomViewCallback callback) {
+                if (customFullscreenView != null) {
+                    callback.onCustomViewHidden();
+                    return;
+                }
+
+                customFullscreenView = view;
+                customViewCallback = callback;
+                originalSystemUiVisibility = getWindow().getDecorView().getSystemUiVisibility();
+                originalOrientation = getRequestedOrientation();
+
+                swipeRefreshLayout.setVisibility(View.GONE);
+                topProgressBar.setVisibility(View.GONE);
+                splashOverlay.setVisibility(View.GONE);
+
+                FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                );
+                params.gravity = Gravity.CENTER;
+                rootLayout.addView(customFullscreenView, params);
+                rootLayout.setBackgroundColor(Color.BLACK);
+
+                getWindow().getDecorView().setSystemUiVisibility(
+                        View.SYSTEM_UI_FLAG_FULLSCREEN
+                                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                                | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                                | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                );
+
+                try {
+                    setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+                } catch (Exception ignored) {}
+            }
+
+            @Override
+            public void onHideCustomView() {
+                hideFullscreenCustomView();
+            }
+
+            @Override
             public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> filePathCallback, FileChooserParams fileChooserParams) {
                 if (MainActivity.this.filePathCallback != null) {
                     MainActivity.this.filePathCallback.onReceiveValue(null);
@@ -283,6 +333,28 @@ public class MainActivity extends Activity {
         });
 
         swipeRefreshLayout.setOnRefreshListener(() -> webView.reload());
+    }
+
+    private void hideFullscreenCustomView() {
+        if (customFullscreenView == null) return;
+
+        try {
+            rootLayout.removeView(customFullscreenView);
+        } catch (Exception ignored) {}
+
+        customFullscreenView = null;
+        rootLayout.setBackgroundColor(Color.WHITE);
+        swipeRefreshLayout.setVisibility(View.VISIBLE);
+
+        getWindow().getDecorView().setSystemUiVisibility(originalSystemUiVisibility);
+        try {
+            setRequestedOrientation(originalOrientation);
+        } catch (Exception ignored) {}
+
+        if (customViewCallback != null) {
+            customViewCallback.onCustomViewHidden();
+            customViewCallback = null;
+        }
     }
 
     private void maybeHideSplash() {
@@ -431,7 +503,9 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        if (webView != null && webView.canGoBack()) {
+        if (customFullscreenView != null) {
+            hideFullscreenCustomView();
+        } else if (webView != null && webView.canGoBack()) {
             webView.goBack();
         } else {
             super.onBackPressed();
