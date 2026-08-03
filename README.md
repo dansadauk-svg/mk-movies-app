@@ -67,3 +67,7 @@ For notifications, users must tap **Enable movie alerts** once inside the websit
 
 ## v1.7 dependency fix
 This pack uses androidbrowserhelper 2.5.0 to avoid AndroidX browser/core versions that require compileSdk 36.
+
+
+## v2.6.2 Force Download Fix
+Movie download button clicks now start Android DownloadManager instead of opening the movie in a video player. Target API remains 36.
