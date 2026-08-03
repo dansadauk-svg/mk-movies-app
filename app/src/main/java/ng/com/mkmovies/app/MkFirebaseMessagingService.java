@@ -1,6 +1,8 @@
 package ng.com.mkmovies.app;
 
 import android.Manifest;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
@@ -17,6 +19,8 @@ import androidx.core.app.NotificationManagerCompat;
 import com.google.firebase.messaging.FirebaseMessagingService;
 import com.google.firebase.messaging.RemoteMessage;
 
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.Map;
 
 public class MkFirebaseMessagingService extends FirebaseMessagingService {
@@ -26,7 +30,7 @@ public class MkFirebaseMessagingService extends FirebaseMessagingService {
     @Override
     public void onNewToken(String token) {
         super.onNewToken(token);
-        MkTokenRegistrar.registerTokenAsync(token);
+        MkTokenRegistrar.registerTokenAsync(getApplicationContext(), token);
     }
 
     @Override
@@ -37,13 +41,20 @@ public class MkFirebaseMessagingService extends FirebaseMessagingService {
         String title = value(data, "title", "MK Movies");
         String body = value(data, "body", "New update available");
         String url = value(data, "url", "https://mkmovies.com.ng/");
+        String imageUrl = firstValue(data,
+                "image", "image_url", "imageUrl", "poster", "poster_url",
+                "movie_poster", "movie_poster_url", "big_picture", "bigPicture",
+                "large_image", "thumbnail", "thumbnail_url");
 
         if (message.getNotification() != null) {
             if (message.getNotification().getTitle() != null) title = message.getNotification().getTitle();
             if (message.getNotification().getBody() != null) body = message.getNotification().getBody();
+            if ((imageUrl == null || imageUrl.trim().isEmpty()) && message.getNotification().getImageUrl() != null) {
+                imageUrl = message.getNotification().getImageUrl().toString();
+            }
         }
 
-        showNotification(title, body, url);
+        showNotification(title, body, url, imageUrl);
     }
 
     private String value(Map<String, String> data, String key, String fallback) {
@@ -51,7 +62,34 @@ public class MkFirebaseMessagingService extends FirebaseMessagingService {
         return (v == null || v.trim().isEmpty()) ? fallback : v;
     }
 
-    private void showNotification(String title, String body, String url) {
+    private String firstValue(Map<String, String> data, String... keys) {
+        if (data == null || keys == null) return "";
+        for (String key : keys) {
+            String v = data.get(key);
+            if (v != null && !v.trim().isEmpty()) return v.trim();
+        }
+        return "";
+    }
+
+    private Bitmap loadBitmap(String imageUrl) {
+        if (imageUrl == null || !imageUrl.startsWith("http")) return null;
+        HttpURLConnection connection = null;
+        try {
+            URL url = new URL(imageUrl);
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setConnectTimeout(5000);
+            connection.setReadTimeout(5000);
+            connection.setInstanceFollowRedirects(true);
+            return BitmapFactory.decodeStream(connection.getInputStream());
+        } catch (Exception e) {
+            Log.w(TAG, "Could not load notification image", e);
+            return null;
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+    }
+
+    private void showNotification(String title, String body, String url, String imageUrl) {
         createNotificationChannel();
 
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -78,10 +116,17 @@ public class MkFirebaseMessagingService extends FirebaseMessagingService {
                 .setSmallIcon(R.drawable.ic_stat_mk)
                 .setContentTitle(title)
                 .setContentText(body)
-                .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                 .setAutoCancel(true)
                 .setContentIntent(pendingIntent);
+
+        Bitmap bigPicture = loadBitmap(imageUrl);
+        if (bigPicture != null) {
+            builder.setLargeIcon(bigPicture)
+                    .setStyle(new NotificationCompat.BigPictureStyle().bigPicture(bigPicture).setSummaryText(body));
+        } else {
+            builder.setStyle(new NotificationCompat.BigTextStyle().bigText(body));
+        }
 
         NotificationManagerCompat.from(this).notify((int) System.currentTimeMillis(), builder.build());
     }

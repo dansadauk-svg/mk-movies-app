@@ -1,5 +1,7 @@
 package ng.com.mkmovies.app;
 
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.os.Build;
 import android.util.Log;
 
@@ -16,10 +18,32 @@ import java.nio.charset.StandardCharsets;
 public final class MkTokenRegistrar {
     private static final String TAG = "MKMoviesFCM";
     private static final String REGISTER_ENDPOINT = "https://mkmovies.com.ng/wp-json/mkpush/v2/register-token";
+    private static final String PREFS = "mk_movies_fcm_registration";
+    private static final String KEY_TOKEN = "last_token";
+    private static final String KEY_VERSION = "last_version";
+    private static final String KEY_SUCCESS_AT = "last_success_at";
+    private static final String KEY_ATTEMPT_AT = "last_attempt_at";
+    private static final long SUCCESS_REFRESH_MS = 24L * 60L * 60L * 1000L;
+    private static final long RETRY_COOLDOWN_MS = 30L * 60L * 1000L;
 
     private MkTokenRegistrar() {}
 
+    public static void registerTokenAsync(final Context context, final String token) {
+        if (context == null || token == null || token.length() < 40) return;
+        final Context appContext = context.getApplicationContext();
+        if (!shouldRegister(appContext, token)) return;
+        markAttempt(appContext);
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                boolean ok = registerToken(token);
+                if (ok) markSuccess(appContext, token);
+            }
+        }).start();
+    }
+
     public static void registerTokenAsync(final String token) {
+        // Kept only for backward source compatibility. New calls should pass Context.
         if (token == null || token.length() < 40) return;
         new Thread(new Runnable() {
             @Override
@@ -29,7 +53,44 @@ public final class MkTokenRegistrar {
         }).start();
     }
 
-    private static void registerToken(String token) {
+    private static boolean shouldRegister(Context context, String token) {
+        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        long now = System.currentTimeMillis();
+        String oldToken = prefs.getString(KEY_TOKEN, "");
+        String oldVersion = prefs.getString(KEY_VERSION, "");
+        long successAt = prefs.getLong(KEY_SUCCESS_AT, 0L);
+        long attemptAt = prefs.getLong(KEY_ATTEMPT_AT, 0L);
+
+        boolean sameToken = token.equals(oldToken);
+        boolean sameVersion = BuildConfig.VERSION_NAME.equals(oldVersion);
+        if (sameToken && sameVersion && successAt > 0 && (now - successAt) < SUCCESS_REFRESH_MS) {
+            Log.d(TAG, "Skipping token registration; token already registered recently.");
+            return false;
+        }
+        if ((now - attemptAt) < RETRY_COOLDOWN_MS) {
+            Log.d(TAG, "Skipping token registration; retry cooldown active.");
+            return false;
+        }
+        return true;
+    }
+
+    private static void markAttempt(Context context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putLong(KEY_ATTEMPT_AT, System.currentTimeMillis())
+                .apply();
+    }
+
+    private static void markSuccess(Context context, String token) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putString(KEY_TOKEN, token)
+                .putString(KEY_VERSION, BuildConfig.VERSION_NAME)
+                .putLong(KEY_SUCCESS_AT, System.currentTimeMillis())
+                .apply();
+    }
+
+    private static boolean registerToken(String token) {
         HttpURLConnection connection = null;
         try {
             JSONObject body = new JSONObject();
@@ -45,8 +106,8 @@ public final class MkTokenRegistrar {
             URL url = new URL(REGISTER_ENDPOINT);
             connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("POST");
-            connection.setConnectTimeout(15000);
-            connection.setReadTimeout(15000);
+            connection.setConnectTimeout(8000);
+            connection.setReadTimeout(8000);
             connection.setDoOutput(true);
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
             connection.setRequestProperty("Accept", "application/json");
@@ -61,8 +122,10 @@ public final class MkTokenRegistrar {
             InputStream stream = (code >= 200 && code < 300) ? connection.getInputStream() : connection.getErrorStream();
             String response = readStream(stream);
             Log.d(TAG, "Token register HTTP " + code + ": " + response);
+            return code >= 200 && code < 300;
         } catch (Exception e) {
             Log.w(TAG, "Could not register native FCM token", e);
+            return false;
         } finally {
             if (connection != null) connection.disconnect();
         }

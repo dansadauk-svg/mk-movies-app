@@ -466,7 +466,7 @@ public class MainActivity extends Activity {
     private void registerNativeToken() {
         FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {
             if (task.isSuccessful()) {
-                MkTokenRegistrar.registerTokenAsync(task.getResult());
+                MkTokenRegistrar.registerTokenAsync(getApplicationContext(), task.getResult());
                 Log.d(TAG, "Native FCM token registered");
             } else {
                 Log.w(TAG, "Could not get native FCM token", task.getException());
