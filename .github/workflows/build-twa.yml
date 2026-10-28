@@ -1,4 +1,4 @@
-name: Build MK Movies TWA APK/AAB
+name: Build MK Movies v2.8.0 APK/AAB
 
 on:
   workflow_dispatch:
@@ -34,11 +34,11 @@ jobs:
           test -f app/build.gradle || { echo "::error::app/build.gradle is missing. The app folder was not uploaded correctly."; exit 1; }
           test -f app/src/main/AndroidManifest.xml || { echo "::error::AndroidManifest.xml is missing."; exit 1; }
 
-      - name: Install Gradle 8.13
+      - name: Install Gradle 9.6.0
         run: |
-          curl -fsSL https://services.gradle.org/distributions/gradle-8.13-bin.zip -o /tmp/gradle.zip
+          curl -fsSL https://services.gradle.org/distributions/gradle-9.6.0-bin.zip -o /tmp/gradle.zip
           unzip -q /tmp/gradle.zip -d /tmp/gradle
-          echo "/tmp/gradle/gradle-8.13/bin" >> "$GITHUB_PATH"
+          echo "/tmp/gradle/gradle-9.6.0/bin" >> "$GITHUB_PATH"
 
       - name: Install Android SDK packages
         run: |
@@ -46,19 +46,28 @@ jobs:
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
-      - name: Prepare signing key
+      - name: Prepare and verify Play upload key
         env:
           MK_KEYSTORE_BASE64: ${{ secrets.MK_KEYSTORE_BASE64 }}
+          MK_KEYSTORE_PASSWORD: ${{ secrets.MK_KEYSTORE_PASSWORD }}
         run: |
-          if [ ! -f mk-movies-release-key.jks ]; then
-            if [ -n "$MK_KEYSTORE_BASE64" ]; then
-              echo "$MK_KEYSTORE_BASE64" | base64 --decode > mk-movies-release-key.jks
-            else
-              echo "::error::mk-movies-release-key.jks was not found. Keep the repo private and upload the .jks file, or add MK_KEYSTORE_BASE64 as a repository secret."
-              exit 1
-            fi
+          if [ -z "$MK_KEYSTORE_BASE64" ]; then
+            echo "::error::Missing repository secret: MK_KEYSTORE_BASE64"
+            exit 1
           fi
-          ls -lh mk-movies-release-key.jks
+          if [ -z "$MK_KEYSTORE_PASSWORD" ]; then
+            echo "::error::Missing repository secret: MK_KEYSTORE_PASSWORD"
+            exit 1
+          fi
+          MK_KEY_ALIAS="mk_movies"
+          printf '%s' "$MK_KEYSTORE_BASE64" | base64 --decode > mk-movies-release-key.jks
+          EXPECTED_SHA1="59:0D:C2:C2:11:7A:04:5B:8A:03:44:24:2D:A4:C4:32:43:3F:A3:05"
+          ACTUAL_SHA1="$(keytool -list -v -keystore mk-movies-release-key.jks -storepass "$MK_KEYSTORE_PASSWORD" -alias "$MK_KEY_ALIAS" 2>/dev/null | sed -n 's/^[[:space:]]*SHA1: //p' | head -n 1 | tr -d '\r')"
+          if [ "$ACTUAL_SHA1" != "$EXPECTED_SHA1" ]; then
+            echo "::error::Wrong Play upload key. Expected SHA1 $EXPECTED_SHA1 but received ${ACTUAL_SHA1:-unreadable key}."
+            exit 1
+          fi
+          echo "Play upload key verified: $ACTUAL_SHA1"
 
       - name: Build release APK and AAB
         env:
@@ -77,16 +86,25 @@ jobs:
           gradle --version
           gradle --no-daemon --stacktrace :app:assembleRelease :app:bundleRelease
 
+      - name: Verify and name release files
+        run: |
+          mkdir -p release
+          cp app/build/outputs/apk/release/app-release.apk release/MK-Movies-v2.8.0-release.apk
+          cp app/build/outputs/bundle/release/app-release.aab release/MK-Movies-v2.8.0-play-console.aab
+          EXPECTED_SHA1="59:0D:C2:C2:11:7A:04:5B:8A:03:44:24:2D:A4:C4:32:43:3F:A3:05"
+          keytool -printcert -jarfile release/MK-Movies-v2.8.0-play-console.aab | grep -F "SHA1: $EXPECTED_SHA1"
+          echo "Release AAB signing certificate verified."
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: mk-movies-release-apk
-          path: app/build/outputs/apk/release/*.apk
+          path: release/MK-Movies-v2.8.0-release.apk
           if-no-files-found: error
 
       - name: Upload AAB
         uses: actions/upload-artifact@v4
         with:
           name: mk-movies-release-aab
-          path: app/build/outputs/bundle/release/*.aab
+          path: release/MK-Movies-v2.8.0-play-console.aab
           if-no-files-found: error
