@@ -9,13 +9,16 @@ import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.media.AudioAttributes;
 import android.net.Uri;
 import android.os.Build;
+import android.provider.Settings;
 import android.util.Log;
 
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 
+import com.google.firebase.messaging.FirebaseMessaging;
 import com.google.firebase.messaging.FirebaseMessagingService;
 import com.google.firebase.messaging.RemoteMessage;
 
@@ -25,12 +28,25 @@ import java.util.Map;
 
 public class MkFirebaseMessagingService extends FirebaseMessagingService {
     private static final String TAG = "MKMoviesFCMService";
-    private static final String CHANNEL_ID = "mk_movies_channel";
+    public static final String CHANNEL_ID = "mk_movies_alerts_v2";
+    public static final String ALL_USERS_TOPIC = "mk_movies_all";
 
     @Override
     public void onNewToken(String token) {
         super.onNewToken(token);
+        FirebaseMessaging.getInstance().subscribeToTopic(ALL_USERS_TOPIC)
+                .addOnFailureListener(error -> Log.w(TAG, "Could not restore all-user topic subscription", error));
         MkTokenRegistrar.registerTokenAsync(getApplicationContext(), token);
+    }
+
+    @Override
+    public void onDeletedMessages() {
+        super.onDeletedMessages();
+        FirebaseMessaging.getInstance().subscribeToTopic(ALL_USERS_TOPIC)
+                .addOnFailureListener(error -> Log.w(TAG, "Could not refresh all-user topic subscription", error));
+        FirebaseMessaging.getInstance().getToken().addOnSuccessListener(token ->
+                MkTokenRegistrar.registerTokenAsync(getApplicationContext(), token)
+        );
     }
 
     @Override
@@ -49,6 +65,9 @@ public class MkFirebaseMessagingService extends FirebaseMessagingService {
         if (message.getNotification() != null) {
             if (message.getNotification().getTitle() != null) title = message.getNotification().getTitle();
             if (message.getNotification().getBody() != null) body = message.getNotification().getBody();
+            if (message.getNotification().getLink() != null) {
+                url = message.getNotification().getLink().toString();
+            }
             if ((imageUrl == null || imageUrl.trim().isEmpty()) && message.getNotification().getImageUrl() != null) {
                 imageUrl = message.getNotification().getImageUrl().toString();
             }
@@ -116,7 +135,10 @@ public class MkFirebaseMessagingService extends FirebaseMessagingService {
                 .setSmallIcon(R.drawable.ic_stat_mk)
                 .setContentTitle(title)
                 .setContentText(body)
-                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setDefaults(NotificationCompat.DEFAULT_ALL)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setCategory(NotificationCompat.CATEGORY_PROMO)
                 .setAutoCancel(true)
                 .setContentIntent(pendingIntent);
 
@@ -138,10 +160,36 @@ public class MkFirebaseMessagingService extends FirebaseMessagingService {
             NotificationChannel channel = new NotificationChannel(
                     CHANNEL_ID,
                     "MK Movies Alerts",
-                    NotificationManager.IMPORTANCE_DEFAULT
+                    NotificationManager.IMPORTANCE_HIGH
             );
             channel.setDescription("New movies, new episodes and account alerts from MK Movies.");
+            channel.enableVibration(true);
+            channel.setSound(
+                    Settings.System.DEFAULT_NOTIFICATION_URI,
+                    new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).build()
+            );
             manager.createNotificationChannel(channel);
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                NotificationChannel existingLegacyChannel = manager.getNotificationChannel("movie_updates");
+                if (existingLegacyChannel != null
+                        && existingLegacyChannel.getImportance() < NotificationManager.IMPORTANCE_DEFAULT
+                        && !existingLegacyChannel.hasUserSetImportance()) {
+                    manager.deleteNotificationChannel("movie_updates");
+                }
+            }
+            NotificationChannel legacySenderChannel = new NotificationChannel(
+                    "movie_updates",
+                    "Movie Updates",
+                    NotificationManager.IMPORTANCE_HIGH
+            );
+            legacySenderChannel.setDescription("New movie and episode notifications.");
+            legacySenderChannel.enableVibration(true);
+            legacySenderChannel.setSound(
+                    Settings.System.DEFAULT_NOTIFICATION_URI,
+                    new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).build()
+            );
+            manager.createNotificationChannel(legacySenderChannel);
         }
     }
 }

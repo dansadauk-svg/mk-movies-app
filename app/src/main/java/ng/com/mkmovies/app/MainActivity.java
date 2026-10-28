@@ -2,7 +2,6 @@ package ng.com.mkmovies.app;
 
 import android.Manifest;
 import android.app.Activity;
-import android.app.DownloadManager;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Context;
@@ -10,14 +9,15 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ActivityInfo;
 import android.graphics.Color;
+import android.media.AudioAttributes;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.Settings;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -333,7 +333,7 @@ public class MainActivity extends Activity {
         webView.setDownloadListener(new DownloadListener() {
             @Override
             public void onDownloadStart(String url, String userAgent, String contentDisposition, String mimeType, long contentLength) {
-                startDownload(url, userAgent, contentDisposition, mimeType);
+                startDownload(url, userAgent, contentDisposition, mimeType, currentMovieTitle());
             }
         });
 
@@ -405,13 +405,14 @@ public class MainActivity extends Activity {
 
     private class MovieDownloadBridge {
         @JavascriptInterface
-        public void startMovieDownload(final String url) {
+        public void startMovieDownload(final String url, final String movieTitle) {
             if (url == null || url.trim().isEmpty()) return;
             runOnUiThread(() -> startDownload(
                     url,
                     webView != null ? webView.getSettings().getUserAgentString() : "MKMoviesAndroid/" + BuildConfig.VERSION_NAME,
                     "attachment",
-                    guessMimeTypeFromUrl(url)
+                    guessMimeTypeFromUrl(url),
+                    movieTitle
             ));
         }
     }
@@ -419,8 +420,8 @@ public class MainActivity extends Activity {
     private void injectDownloadClickInterceptor(WebView view) {
         if (view == null) return;
         String js = "(function(){"
-                + "if(window.__mk_movies_download_interceptor_v262)return;"
-                + "window.__mk_movies_download_interceptor_v262=true;"
+                + "if(window.__mk_movies_download_interceptor_v270)return;"
+                + "window.__mk_movies_download_interceptor_v270=true;"
                 + "function isDownloadLink(a){"
                 + "if(!a||!a.href)return false;"
                 + "var h=String(a.href);"
@@ -434,11 +435,21 @@ public class MainActivity extends Activity {
                 + "|| h.indexOf('action=mkmc_download_movie')!==-1"
                 + "|| h.indexOf('response-content-disposition=')!==-1;"
                 + "}"
+                + "function text(el){return el&&el.textContent?el.textContent.trim():'';}"
+                + "function movieTitle(a){"
+                + "var v=a.getAttribute('download')||a.getAttribute('data-filename')||a.getAttribute('data-movie-title')||a.getAttribute('data-title')||'';"
+                + "if(v&&v.toLowerCase()!=='download')return v;"
+                + "var card=a.closest&&a.closest('article,.movie,.movie-card,.mkmc-movie-card,.post,.entry,.mk-watch-white');"
+                + "var titleNode=card&&card.querySelector('.movie-title,.entry-title,.mkmc-title,.mk-watch-white__title,h1,h2,h3');"
+                + "v=text(titleNode);if(v)return v;"
+                + "v=text(document.querySelector('.mk-watch-white__title,.mkmc-watch-title,.entry-title,h1'));"
+                + "return v||document.title||'MK Movies movie';"
+                + "}"
                 + "document.addEventListener('click',function(e){"
                 + "var a=e.target&&e.target.closest?e.target.closest('a'):null;"
                 + "if(!isDownloadLink(a))return;"
                 + "e.preventDefault();e.stopPropagation();"
-                + "try{window.MKMoviesAndroidBridge.startMovieDownload(a.href);}catch(err){window.location.href=a.href;}"
+                + "try{window.MKMoviesAndroidBridge.startMovieDownload(a.href,movieTitle(a));}catch(err){window.location.href=a.href;}"
                 + "},true);"
                 + "})();";
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
@@ -493,7 +504,8 @@ public class MainActivity extends Activity {
                         uri.toString(),
                         webView != null ? webView.getSettings().getUserAgentString() : "MKMoviesAndroid/" + BuildConfig.VERSION_NAME,
                         "attachment",
-                        guessMimeTypeFromUrl(uri.toString())
+                        guessMimeTypeFromUrl(uri.toString()),
+                        currentMovieTitle()
                 );
                 return true;
             }
@@ -529,42 +541,98 @@ public class MainActivity extends Activity {
         return "application/octet-stream";
     }
 
-    private String cleanDownloadFilename(String url, String contentDisposition, String mimeType) {
-        String filename = URLUtil.guessFileName(url, contentDisposition, mimeType);
-        if (filename != null) filename = filename.trim();
+    private String currentMovieTitle() {
+        String title = webView != null ? webView.getTitle() : "";
+        return title == null ? "" : title;
+    }
 
-        if (filename == null
-                || filename.isEmpty()
-                || filename.equalsIgnoreCase("admin-post.php")
-                || filename.equalsIgnoreCase("download")
-                || filename.toLowerCase(Locale.US).endsWith(".bin")) {
+    private boolean isUsefulMovieTitle(String value) {
+        if (value == null) return false;
+        String lower = value.trim().toLowerCase(Locale.US);
+        return lower.length() > 2
+                && !lower.equals("download")
+                && !lower.equals("download movie")
+                && !lower.equals("watch")
+                && !lower.equals("watch now")
+                && !lower.equals("movie")
+                && !lower.equals("mk movies")
+                && !lower.equals("admin-post.php")
+                && !lower.endsWith(".bin");
+    }
+
+    private String cleanMovieTitle(String value) {
+        if (value == null) return "";
+        String cleaned;
+        try {
+            cleaned = Uri.decode(value);
+        } catch (Exception ignored) {
+            cleaned = value;
+        }
+        cleaned = cleaned.replaceAll("(?i)^(download|watch)\\s+", "");
+        cleaned = cleaned.replaceAll("(?i)\\s*[|–—]\\s*MK\\s*Movies.*$", "");
+        cleaned = cleaned.replaceAll("(?i)\\s+-\\s+MK\\s*Movies.*$", "");
+        cleaned = cleaned.replaceAll("[\\\\/:*?\"<>|]", "-");
+        cleaned = cleaned.replaceAll("\\s+", " ").trim();
+        return cleaned;
+    }
+
+    private String extensionFor(String url, String mimeType) {
+        String lower = url == null ? "" : url.toLowerCase(Locale.US);
+        String[] extensions = {".mp4", ".mkv", ".webm", ".m4v", ".mov", ".avi", ".3gp"};
+        for (String extension : extensions) {
+            if (lower.contains(extension)) return extension;
+        }
+        String mime = mimeType == null ? "" : mimeType.toLowerCase(Locale.US);
+        if (mime.contains("matroska")) return ".mkv";
+        if (mime.contains("webm")) return ".webm";
+        if (mime.contains("m4v")) return ".m4v";
+        if (mime.contains("quicktime")) return ".mov";
+        if (mime.contains("msvideo") || mime.contains("avi")) return ".avi";
+        if (mime.contains("3gpp")) return ".3gp";
+        return ".mp4";
+    }
+
+    private boolean hasMovieExtension(String filename) {
+        if (filename == null) return false;
+        String lower = filename.toLowerCase(Locale.US);
+        return lower.endsWith(".mp4") || lower.endsWith(".mkv") || lower.endsWith(".webm")
+                || lower.endsWith(".m4v") || lower.endsWith(".mov")
+                || lower.endsWith(".avi") || lower.endsWith(".3gp");
+    }
+
+    private String cleanDownloadFilename(String url, String contentDisposition, String mimeType, String requestedTitle) {
+        String filename = cleanMovieTitle(requestedTitle);
+
+        if (!isUsefulMovieTitle(filename)) {
             try {
                 Uri uri = Uri.parse(url);
-                String downloadName = uri.getQueryParameter("download");
-                if (downloadName != null && downloadName.trim().length() > 2) {
-                    filename = downloadName.trim();
+                String[] keys = {"download", "filename", "file_name", "movie_title", "title", "name"};
+                for (String key : keys) {
+                    String candidate = cleanMovieTitle(uri.getQueryParameter(key));
+                    if (isUsefulMovieTitle(candidate)) {
+                        filename = candidate;
+                        break;
+                    }
                 }
             } catch (Exception ignored) {}
         }
 
-        if (filename == null || filename.trim().isEmpty() || filename.equalsIgnoreCase("admin-post.php")) {
-            String ext = ".mp4";
-            String safeUrl = url == null ? "" : url.toLowerCase(Locale.US);
-            if (safeUrl.contains(".mkv")) ext = ".mkv";
-            else if (safeUrl.contains(".webm")) ext = ".webm";
-            else if (safeUrl.contains(".m4v")) ext = ".m4v";
-            else if (safeUrl.contains(".mov")) ext = ".mov";
-            else if (safeUrl.contains(".avi")) ext = ".avi";
-            else if (safeUrl.contains(".3gp")) ext = ".3gp";
-            filename = "MK-Movies-" + System.currentTimeMillis() + ext;
+        if (!isUsefulMovieTitle(filename)) {
+            filename = cleanMovieTitle(URLUtil.guessFileName(url, contentDisposition, mimeType));
         }
+        if (!isUsefulMovieTitle(filename)) {
+            filename = "MK-Movies-" + System.currentTimeMillis();
+        }
+        if (!hasMovieExtension(filename)) filename += extensionFor(url, mimeType);
 
-        filename = filename.replaceAll("[\\\\/:*?\"<>|]", "-");
-        if (!filename.contains(".")) filename = filename + ".mp4";
+        if (filename.length() > 160) {
+            String extension = extensionFor(filename, mimeType);
+            filename = filename.substring(0, Math.max(1, 160 - extension.length())).trim() + extension;
+        }
         return filename;
     }
 
-    private void startDownload(String url, String userAgent, String contentDisposition, String mimeType) {
+    private void startDownload(String url, String userAgent, String contentDisposition, String mimeType, String requestedTitle) {
         try {
             if (url == null || url.trim().isEmpty()) {
                 Toast.makeText(this, "Download link is empty", Toast.LENGTH_SHORT).show();
@@ -574,41 +642,24 @@ public class MainActivity extends Activity {
             String safeMimeType = (mimeType == null || mimeType.trim().isEmpty()) ? guessMimeTypeFromUrl(url) : mimeType;
             if (safeMimeType == null || safeMimeType.trim().isEmpty()) safeMimeType = "application/octet-stream";
 
-            String filename = cleanDownloadFilename(url, contentDisposition, safeMimeType);
-            DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
-            request.setMimeType(safeMimeType);
-            request.addRequestHeader("User-Agent", userAgent != null ? userAgent : ("MKMoviesAndroid/" + BuildConfig.VERSION_NAME));
-            request.addRequestHeader("Accept", "video/*,application/octet-stream,*/*");
+            String filename = cleanDownloadFilename(url, contentDisposition, safeMimeType, requestedTitle);
+            String safeUserAgent = userAgent != null ? userAgent : ("MKMoviesAndroid/" + BuildConfig.VERSION_NAME);
 
             String cookies = CookieManager.getInstance().getCookie(url);
             if (cookies == null && url.contains("mkmovies.com.ng")) {
                 cookies = CookieManager.getInstance().getCookie("https://mkmovies.com.ng/");
             }
-            if (cookies != null && !cookies.trim().isEmpty()) {
-                request.addRequestHeader("Cookie", cookies);
-            }
-
-            request.setTitle(filename);
-            request.setDescription("Downloading movie from MK Movies");
-            request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-            request.setAllowedNetworkTypes(DownloadManager.Request.NETWORK_WIFI | DownloadManager.Request.NETWORK_MOBILE);
-            request.setAllowedOverMetered(true);
-            request.setAllowedOverRoaming(true);
-            request.allowScanningByMediaScanner();
-
-            try {
-                request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, filename);
-            } catch (Exception e) {
-                request.setDestinationInExternalFilesDir(this, Environment.DIRECTORY_DOWNLOADS, filename);
-            }
-
-            DownloadManager manager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
-            if (manager != null) {
-                manager.enqueue(request);
-                Toast.makeText(this, "Download started. Check your Downloads.", Toast.LENGTH_LONG).show();
-            } else {
-                Toast.makeText(this, "Download manager is not available", Toast.LENGTH_SHORT).show();
-            }
+            String referer = webView != null ? webView.getUrl() : "https://mkmovies.com.ng/";
+            MovieDownloadService.start(
+                    getApplicationContext(),
+                    url.trim(),
+                    filename,
+                    safeMimeType,
+                    safeUserAgent,
+                    cookies,
+                    referer
+            );
+            Toast.makeText(this, "Downloading " + filename, Toast.LENGTH_LONG).show();
         } catch (Exception e) {
             Log.w(TAG, "Movie download failed", e);
             Toast.makeText(this, "Download failed. Please try again.", Toast.LENGTH_LONG).show();
@@ -630,6 +681,15 @@ public class MainActivity extends Activity {
     }
 
     private void registerNativeToken() {
+        FirebaseMessaging.getInstance()
+                .subscribeToTopic(MkFirebaseMessagingService.ALL_USERS_TOPIC)
+                .addOnCompleteListener(task -> {
+                    if (task.isSuccessful()) {
+                        Log.d(TAG, "Subscribed to all-user FCM topic");
+                    } else {
+                        Log.w(TAG, "Could not subscribe to all-user FCM topic", task.getException());
+                    }
+                });
         FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {
             if (task.isSuccessful()) {
                 MkTokenRegistrar.registerTokenAsync(getApplicationContext(), task.getResult());
@@ -645,12 +705,39 @@ public class MainActivity extends Activity {
             NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
             if (manager == null) return;
             NotificationChannel channel = new NotificationChannel(
-                    "mk_movies_channel",
+                    MkFirebaseMessagingService.CHANNEL_ID,
                     "MK Movies Alerts",
-                    NotificationManager.IMPORTANCE_DEFAULT
+                    NotificationManager.IMPORTANCE_HIGH
             );
             channel.setDescription("New movies, new episodes and account alerts from MK Movies.");
+            channel.enableVibration(true);
+            channel.setSound(
+                    Settings.System.DEFAULT_NOTIFICATION_URI,
+                    new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).build()
+            );
             manager.createNotificationChannel(channel);
+
+            // Older WordPress sender versions use this channel id in their FCM payload.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                NotificationChannel existingLegacyChannel = manager.getNotificationChannel("movie_updates");
+                if (existingLegacyChannel != null
+                        && existingLegacyChannel.getImportance() < NotificationManager.IMPORTANCE_DEFAULT
+                        && !existingLegacyChannel.hasUserSetImportance()) {
+                    manager.deleteNotificationChannel("movie_updates");
+                }
+            }
+            NotificationChannel legacySenderChannel = new NotificationChannel(
+                    "movie_updates",
+                    "Movie Updates",
+                    NotificationManager.IMPORTANCE_HIGH
+            );
+            legacySenderChannel.setDescription("New movie and episode notifications.");
+            legacySenderChannel.enableVibration(true);
+            legacySenderChannel.setSound(
+                    Settings.System.DEFAULT_NOTIFICATION_URI,
+                    new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).build()
+            );
+            manager.createNotificationChannel(legacySenderChannel);
         }
     }
 
