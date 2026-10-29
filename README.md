@@ -1,4 +1,4 @@
-# MK Movies Android GitHub Build Pack v2.8.0
+# MK Movies Android GitHub Build Pack v2.9.0
 
 This pack builds the MK Movies Android app from GitHub Actions. It uses a Trusted Web Activity so the app opens `https://mkmovies.com.ng` without the normal browser address bar after Digital Asset Links verification.
 
@@ -41,11 +41,11 @@ Paste the copied value into the `MK_KEYSTORE_BASE64` GitHub secret. The workflow
 
 1. Open the GitHub repository.
 2. Go to **Actions**.
-3. Select **Build MK Movies TWA APK/AAB**.
+3. Select **Build MK Movies v2.9.0 API 36 APK/AAB**.
 4. Click **Run workflow**.
 5. Download the generated APK/AAB from the workflow artifacts.
 
-The output files are named `MK-Movies-v2.8.0-release.apk` and `MK-Movies-v2.8.0-play-console.aab`. Upload only the Play Console AAB to Google Play.
+The output files are named `MK-Movies-v2.9.0-release.apk` and `MK-Movies-v2.9.0-play-console.aab`. Upload only the Play Console AAB to Google Play.
 
 ## Included app features
 
@@ -93,3 +93,11 @@ Movie download button clicks now start Android DownloadManager instead of openin
 - Requires the signing keystore through GitHub Actions secrets instead of committing it to the repository.
 - Verifies the upload-key SHA-1 before building and verifies the completed AAB certificate afterward.
 - Preserves the v2.7.0 native download notifications, movie-title filenames, high-priority FCM topic alerts, API 36 target, and alerting notification channels.
+
+## v2.9.0 API 36 Release
+
+- Keeps both `compileSdk` and `targetSdk` on Android API 36.
+- Bumps the Play Store release to versionName 2.9.0 and versionCode 19.
+- Installs Android platform 36 and build-tools 36.0.0 in GitHub Actions.
+- Adds a build-time validation step that stops the workflow if the SDK or version values are incorrect.
+- Produces `MK-Movies-v2.9.0-release.apk` and `MK-Movies-v2.9.0-play-console.aab`.

@@ -1,4 +1,4 @@
-MK Movies v2.8.0 GitHub Setup
+MK Movies v2.9.0 API 36 GitHub Setup
 ================================
 
 1. Create a GitHub repository and upload the CONTENTS of this ZIP to the repository root.
@@ -9,9 +9,9 @@ MK Movies v2.8.0 GitHub Setup
    - MK_KEYSTORE_PASSWORD
    - MK_KEY_PASSWORD
    The workflow already uses the mk_movies key alias.
-5. Open Actions > Build MK Movies v2.8.0 APK/AAB > Run workflow.
+5. Open Actions > Build MK Movies v2.9.0 API 36 APK/AAB > Run workflow.
 6. Download mk-movies-release-apk for direct installation.
 7. Download mk-movies-release-aab for Google Play Console.
 
 The workflow will reject any signing key that does not match Google Play's expected SHA-1.
-The AAB output is named MK-Movies-v2.8.0-play-console.aab.
+The AAB output is named MK-Movies-v2.9.0-play-console.aab.

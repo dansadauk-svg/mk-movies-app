@@ -1,6 +1,7 @@
 Package name: ng.com.mkmovies.app
 Website: https://mkmovies.com.ng
-Version: 2.8.0 (code 18)
+Version: 2.9.0 (code 19)
+Android SDK: compileSdk 36 / targetSdk 36
 Notifications: enabled
 Play upload SHA1: 59:0D:C2:C2:11:7A:04:5B:8A:03:44:24:2D:A4:C4:32:43:3F:A3:05
 Normal app orientation: portrait

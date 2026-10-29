@@ -20,8 +20,8 @@
     "path": "mk-movies-release-key.jks",
     "alias": "mk_movies"
   },
-  "appVersionName": "2.8.0",
-  "appVersionCode": 18,
+  "appVersionName": "2.9.0",
+  "appVersionCode": 19,
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",
   "webManifestUrl": "https://mkmovies.com.ng/mk-pwa-manifest.json",
