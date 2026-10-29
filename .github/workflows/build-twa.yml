@@ -1,4 +1,4 @@
-name: Build MK Movies v2.8.0 APK/AAB
+name: Build MK Movies v2.9.0 API 36 APK/AAB
 
 on:
   workflow_dispatch:
@@ -46,6 +46,14 @@ jobs:
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
+      - name: Verify API 36 and release version
+        run: |
+          grep -Eq '^[[:space:]]*compileSdk[[:space:]]+36([[:space:]]|$)' app/build.gradle || { echo "::error::compileSdk must be 36"; exit 1; }
+          grep -Eq '^[[:space:]]*targetSdk[[:space:]]+36([[:space:]]|$)' app/build.gradle || { echo "::error::targetSdk must be 36"; exit 1; }
+          grep -Eq '^[[:space:]]*versionCode[[:space:]]+19([[:space:]]|$)' app/build.gradle || { echo "::error::versionCode must be 19"; exit 1; }
+          grep -Eq "^[[:space:]]*versionName[[:space:]]+'2\\.9\\.0'([[:space:]]|$)" app/build.gradle || { echo "::error::versionName must be 2.9.0"; exit 1; }
+          echo "Verified Android API 36 and MK Movies v2.9.0 (19)."
+
       - name: Prepare and verify Play upload key
         env:
           MK_KEYSTORE_BASE64: ${{ secrets.MK_KEYSTORE_BASE64 }}
@@ -89,22 +97,22 @@ jobs:
       - name: Verify and name release files
         run: |
           mkdir -p release
-          cp app/build/outputs/apk/release/app-release.apk release/MK-Movies-v2.8.0-release.apk
-          cp app/build/outputs/bundle/release/app-release.aab release/MK-Movies-v2.8.0-play-console.aab
+          cp app/build/outputs/apk/release/app-release.apk release/MK-Movies-v2.9.0-release.apk
+          cp app/build/outputs/bundle/release/app-release.aab release/MK-Movies-v2.9.0-play-console.aab
           EXPECTED_SHA1="59:0D:C2:C2:11:7A:04:5B:8A:03:44:24:2D:A4:C4:32:43:3F:A3:05"
-          keytool -printcert -jarfile release/MK-Movies-v2.8.0-play-console.aab | grep -F "SHA1: $EXPECTED_SHA1"
+          keytool -printcert -jarfile release/MK-Movies-v2.9.0-play-console.aab | grep -F "SHA1: $EXPECTED_SHA1"
           echo "Release AAB signing certificate verified."
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: mk-movies-release-apk
-          path: release/MK-Movies-v2.8.0-release.apk
+          path: release/MK-Movies-v2.9.0-release.apk
           if-no-files-found: error
 
       - name: Upload AAB
         uses: actions/upload-artifact@v4
         with:
           name: mk-movies-release-aab
-          path: release/MK-Movies-v2.8.0-play-console.aab
+          path: release/MK-Movies-v2.9.0-play-console.aab
           if-no-files-found: error
