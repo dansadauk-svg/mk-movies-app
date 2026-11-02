@@ -36,7 +36,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Native resumable foreground downloader with Pause/Resume and Cancel controls. */
 public class MovieDownloadService extends Service {
-    private static final String TAG = "KBMovieDownload";
+    private static final String TAG = "MKMovieDownload";
     private static final String ACTION_START = "ng.com.mkmovies.app.action.START_MOVIE_DOWNLOAD";
     private static final String ACTION_PAUSE = "ng.com.mkmovies.app.action.PAUSE_MOVIE_DOWNLOAD";
     private static final String ACTION_RESUME = "ng.com.mkmovies.app.action.RESUME_MOVIE_DOWNLOAD";
@@ -49,7 +49,7 @@ public class MovieDownloadService extends Service {
     private static final String EXTRA_REFERER = "referer";
     public static final String CHANNEL_ID = "mk_movie_downloads_v4";
     private static final int NOTIFICATION_ID = 4302;
-    private static final String PREFS = "kb_movie_download_state";
+    private static final String PREFS = "mk_movie_download_state";
 
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final AtomicBoolean pauseRequested = new AtomicBoolean(false);

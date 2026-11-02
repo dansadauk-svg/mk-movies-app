@@ -24,19 +24,18 @@ https://mkmovies.com.ng/.well-known/assetlinks.json
 4. If you are using the same repository, keep the three existing repository secrets. Add them only when setting up a new repository:
 
 ```text
-KB_KEYSTORE_PASSWORD
-KB_KEY_ALIAS
-KB_KEY_PASSWORD
-KB_KEYSTORE_BASE64
+MK_KEYSTORE_BASE64
+MK_KEYSTORE_PASSWORD
+MK_KEY_PASSWORD
 ```
 
-The workflow uses the existing `KB_KEY_ALIAS` secret. Never upload the `.jks` file or its password file into the GitHub repository. Generate `KB_KEYSTORE_BASE64` from the original KB Movies upload keystore with Windows PowerShell only when creating a new repository:
+The key alias is built into the MK workflow as `mk_movies`, so no alias secret is required. Never upload the `.jks` file or its password file into the GitHub repository. Generate `MK_KEYSTORE_BASE64` from the original MK Movies upload keystore with Windows PowerShell only when creating a new repository:
 
 ```powershell
-[Convert]::ToBase64String([IO.File]::ReadAllBytes("kb-movies-release-key.jks")) | Set-Clipboard
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("mk-movies-release-key.jks")) | Set-Clipboard
 ```
 
-Paste the copied value into the `KB_KEYSTORE_BASE64` GitHub secret. The workflow verifies that its SHA-1 is `59:0D:C2:C2:11:7A:04:5B:8A:03:44:24:2D:A4:C4:32:43:3F:A3:05` before compiling.
+Paste the copied value into the `MK_KEYSTORE_BASE64` GitHub secret. The workflow verifies that its SHA-1 is `59:0D:C2:C2:11:7A:04:5B:8A:03:44:24:2D:A4:C4:32:43:3F:A3:05` before compiling.
 
 ## Build
 
