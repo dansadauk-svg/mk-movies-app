@@ -40,8 +40,11 @@ import android.widget.ProgressBar;
 import android.widget.Toast;
 
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
+import androidx.core.app.NotificationManagerCompat;
 
 import com.google.firebase.messaging.FirebaseMessaging;
+
+import org.json.JSONArray;
 
 import java.util.Locale;
 
@@ -64,6 +67,7 @@ public class MainActivity extends Activity {
     private int originalOrientation;
     private boolean firstPageLoaded = false;
     private boolean offlineToastShown = false;
+    private String lastKnownMovieTitle = "";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -238,6 +242,7 @@ public class MainActivity extends Activity {
 
             @Override
             public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                lastKnownMovieTitle = "";
                 updateCacheMode();
                 topProgressBar.setVisibility(View.VISIBLE);
                 if (!firstPageLoaded) {
@@ -249,6 +254,7 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 swipeRefreshLayout.setRefreshing(false);
+                captureCurrentMovieTitle(view);
                 injectDownloadClickInterceptor(view);
                 maybeHideSplash();
                 super.onPageFinished(view, url);
@@ -333,7 +339,7 @@ public class MainActivity extends Activity {
         webView.setDownloadListener(new DownloadListener() {
             @Override
             public void onDownloadStart(String url, String userAgent, String contentDisposition, String mimeType, long contentLength) {
-                startDownload(url, userAgent, contentDisposition, mimeType, currentMovieTitle());
+                startDownloadWithResolvedTitle(url, userAgent, contentDisposition, mimeType);
             }
         });
 
@@ -407,21 +413,24 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void startMovieDownload(final String url, final String movieTitle) {
             if (url == null || url.trim().isEmpty()) return;
-            runOnUiThread(() -> startDownload(
-                    url,
-                    webView != null ? webView.getSettings().getUserAgentString() : "MKMoviesAndroid/" + BuildConfig.VERSION_NAME,
-                    "attachment",
-                    guessMimeTypeFromUrl(url),
-                    movieTitle
-            ));
+            runOnUiThread(() -> {
+                rememberMovieTitle(movieTitle);
+                startDownload(
+                        url,
+                        webView != null ? webView.getSettings().getUserAgentString() : "MKMoviesAndroid/" + BuildConfig.VERSION_NAME,
+                        "attachment",
+                        guessMimeTypeFromUrl(url),
+                        bestAvailableMovieTitle(movieTitle)
+                );
+            });
         }
     }
 
     private void injectDownloadClickInterceptor(WebView view) {
         if (view == null) return;
         String js = "(function(){"
-                + "if(window.__mk_movies_download_interceptor_v270)return;"
-                + "window.__mk_movies_download_interceptor_v270=true;"
+                + "if(window.__mk_movies_download_interceptor_v2101)return;"
+                + "window.__mk_movies_download_interceptor_v2101=true;"
                 + "function isDownloadLink(a){"
                 + "if(!a||!a.href)return false;"
                 + "var h=String(a.href);"
@@ -437,12 +446,15 @@ public class MainActivity extends Activity {
                 + "}"
                 + "function text(el){return el&&el.textContent?el.textContent.trim():'';}"
                 + "function movieTitle(a){"
-                + "var v=a.getAttribute('download')||a.getAttribute('data-filename')||a.getAttribute('data-movie-title')||a.getAttribute('data-title')||'';"
-                + "if(v&&v.toLowerCase()!=='download')return v;"
+                + "var v=a.getAttribute('data-movie-title')||a.getAttribute('data-title')||a.getAttribute('data-filename')||a.getAttribute('download')||a.getAttribute('aria-label')||'';"
+                + "if(v&&!/^(download|download movie|watch now)$/i.test(v.trim()))return v;"
                 + "var card=a.closest&&a.closest('article,.movie,.movie-card,.mkmc-movie-card,.post,.entry,.mk-watch-white');"
-                + "var titleNode=card&&card.querySelector('.movie-title,.entry-title,.mkmc-title,.mk-watch-white__title,h1,h2,h3');"
+                + "var titleNode=card&&card.querySelector('.movie-title,.mk-movie-title,.entry-title,.post-title,.mkmc-title,.mk-watch-white__title,[itemprop=\"name\"],h1,h2,h3');"
                 + "v=text(titleNode);if(v)return v;"
-                + "v=text(document.querySelector('.mk-watch-white__title,.mkmc-watch-title,.entry-title,h1'));"
+                + "v=text(document.querySelector('.mk-watch-white__title,.mkmc-watch-title,.movie-title,.mk-movie-title,.entry-title,.post-title,[itemprop=\"name\"],h1'));"
+                + "if(v)return v;"
+                + "var meta=document.querySelector('meta[property=\"og:title\"],meta[name=\"twitter:title\"]');"
+                + "v=meta&&meta.content?meta.content.trim():'';if(v)return v;"
                 + "return v||document.title||'MK Movies movie';"
                 + "}"
                 + "document.addEventListener('click',function(e){"
@@ -500,12 +512,11 @@ public class MainActivity extends Activity {
 
         if (("http".equals(scheme) || "https".equals(scheme))) {
             if (isMovieDownloadUrl(uri) || isLikelyMovieFileUrl(uri)) {
-                startDownload(
+                startDownloadWithResolvedTitle(
                         uri.toString(),
                         webView != null ? webView.getSettings().getUserAgentString() : "MKMoviesAndroid/" + BuildConfig.VERSION_NAME,
                         "attachment",
-                        guessMimeTypeFromUrl(uri.toString()),
-                        currentMovieTitle()
+                        guessMimeTypeFromUrl(uri.toString())
                 );
                 return true;
             }
@@ -541,15 +552,67 @@ public class MainActivity extends Activity {
         return "application/octet-stream";
     }
 
-    private String currentMovieTitle() {
-        String title = webView != null ? webView.getTitle() : "";
-        return title == null ? "" : title;
+    private String movieTitleJavascript() {
+        return "(function(){"
+                + "function text(el){return el&&el.textContent?el.textContent.trim():'';}"
+                + "var selectors=['.mk-watch-white__title','.mkmc-watch-title','.movie-title','.mk-movie-title','.entry-title','.post-title','[itemprop=\"name\"]','main h1','article h1','h1'];"
+                + "for(var i=0;i<selectors.length;i++){var value=text(document.querySelector(selectors[i]));if(value)return value;}"
+                + "var meta=document.querySelector('meta[property=\"og:title\"],meta[name=\"twitter:title\"]');"
+                + "if(meta&&meta.content)return meta.content.trim();"
+                + "return document.title||'';"
+                + "})()";
+    }
+
+    private void captureCurrentMovieTitle(WebView view) {
+        if (view == null) return;
+        view.evaluateJavascript(movieTitleJavascript(), value -> rememberMovieTitle(decodeJavascriptString(value)));
+    }
+
+    private void startDownloadWithResolvedTitle(String url, String userAgent, String contentDisposition, String mimeType) {
+        if (webView == null) {
+            startDownload(url, userAgent, contentDisposition, mimeType, lastKnownMovieTitle);
+            return;
+        }
+        webView.evaluateJavascript(movieTitleJavascript(), value -> {
+            String resolved = decodeJavascriptString(value);
+            rememberMovieTitle(resolved);
+            startDownload(url, userAgent, contentDisposition, mimeType, bestAvailableMovieTitle(resolved));
+        });
+    }
+
+    private String decodeJavascriptString(String value) {
+        if (value == null || value.trim().isEmpty() || "null".equals(value)) return "";
+        try {
+            return new JSONArray("[" + value + "]").getString(0);
+        } catch (Exception ignored) {
+            return value.replaceAll("^\"|\"$", "").replace("\\n", " ").replace("\\\"", "\"");
+        }
+    }
+
+    private void rememberMovieTitle(String value) {
+        String cleaned = cleanMovieTitle(value);
+        if (isUsefulMovieTitle(cleaned)) lastKnownMovieTitle = cleaned;
+    }
+
+    private String bestAvailableMovieTitle(String preferred) {
+        String cleaned = cleanMovieTitle(preferred);
+        if (isUsefulMovieTitle(cleaned)) return cleaned;
+        if (isUsefulMovieTitle(lastKnownMovieTitle)) return lastKnownMovieTitle;
+        String pageTitle = webView != null ? cleanMovieTitle(webView.getTitle()) : "";
+        return isUsefulMovieTitle(pageTitle) ? pageTitle : "";
     }
 
     private boolean isUsefulMovieTitle(String value) {
         if (value == null) return false;
         String lower = value.trim().toLowerCase(Locale.US);
+        String withoutExtension = lower.replaceFirst("\\.(mp4|mkv|webm|m4v|mov|avi|3gp)$", "");
+        boolean generatedName = withoutExtension.matches("^mk[- _]?movies?[- _]?\\d{8,}.*")
+                || withoutExtension.matches("^\\d{3,}[- _]\\d{6,}[- _].+")
+                || withoutExtension.matches("^[a-f0-9]{18,}$");
+        boolean hasLetters = withoutExtension.matches(".*[a-z].*");
         return lower.length() > 2
+                && hasLetters
+                && !generatedName
                 && !lower.equals("download")
                 && !lower.equals("download movie")
                 && !lower.equals("watch")
@@ -557,6 +620,7 @@ public class MainActivity extends Activity {
                 && !lower.equals("movie")
                 && !lower.equals("mk movies")
                 && !lower.equals("admin-post.php")
+                && !lower.startsWith("attachment;")
                 && !lower.endsWith(".bin");
     }
 
@@ -569,6 +633,7 @@ public class MainActivity extends Activity {
             cleaned = value;
         }
         cleaned = cleaned.replaceAll("(?i)^(download|watch)\\s+", "");
+        cleaned = cleaned.replaceAll("(?i)^(download|watch)[-_]+", "");
         cleaned = cleaned.replaceAll("(?i)\\s*[|–—]\\s*MK\\s*Movies.*$", "");
         cleaned = cleaned.replaceAll("(?i)\\s+-\\s+MK\\s*Movies.*$", "");
         cleaned = cleaned.replaceAll("[\\\\/:*?\"<>|]", "-");
@@ -606,9 +671,15 @@ public class MainActivity extends Activity {
         if (!isUsefulMovieTitle(filename)) {
             try {
                 Uri uri = Uri.parse(url);
-                String[] keys = {"download", "filename", "file_name", "movie_title", "title", "name"};
+                String[] keys = {"movie_title", "title", "filename", "file_name", "name", "download", "response-content-disposition"};
                 for (String key : keys) {
-                    String candidate = cleanMovieTitle(uri.getQueryParameter(key));
+                    String rawCandidate = uri.getQueryParameter(key);
+                    String candidate;
+                    if ("response-content-disposition".equals(key) && rawCandidate != null) {
+                        candidate = cleanMovieTitle(URLUtil.guessFileName("https://mkmovies.com.ng/download", rawCandidate, mimeType));
+                    } else {
+                        candidate = cleanMovieTitle(rawCandidate);
+                    }
                     if (isUsefulMovieTitle(candidate)) {
                         filename = candidate;
                         break;
@@ -676,8 +747,19 @@ public class MainActivity extends Activity {
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQ_POST_NOTIFICATIONS) {
+            if (currentNotificationPermission().equals("denied")) {
+                Toast.makeText(this, "Notifications are off. Allow them in Android app settings to receive movie alerts.", Toast.LENGTH_LONG).show();
+            }
             registerNativeToken();
         }
+    }
+
+    private String currentNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            return "denied";
+        }
+        return NotificationManagerCompat.from(this).areNotificationsEnabled() ? "granted" : "denied";
     }
 
     private void registerNativeToken() {
@@ -692,7 +774,7 @@ public class MainActivity extends Activity {
                 });
         FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {
             if (task.isSuccessful()) {
-                MkTokenRegistrar.registerTokenAsync(getApplicationContext(), task.getResult());
+                MkTokenRegistrar.registerTokenAsync(getApplicationContext(), task.getResult(), currentNotificationPermission());
                 Log.d(TAG, "Native FCM token registered");
             } else {
                 Log.w(TAG, "Could not get native FCM token", task.getException());
@@ -752,6 +834,7 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         updateCacheMode();
+        registerNativeToken();
     }
 
     @Override

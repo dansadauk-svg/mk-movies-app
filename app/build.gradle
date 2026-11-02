@@ -15,8 +15,8 @@ android {
         applicationId 'ng.com.mkmovies.app'
         minSdk 24
         targetSdk 36
-        versionCode 19
-        versionName '2.9.0'
+        versionCode 22
+        versionName '2.10.1'
     }
 
     compileOptions {
@@ -26,10 +26,10 @@ android {
 
     signingConfigs {
         release {
-            storeFile file('../mk-movies-release-key.jks')
-            storePassword System.getenv('MK_KEYSTORE_PASSWORD')
-            keyAlias System.getenv('MK_KEY_ALIAS') ?: 'mk_movies'
-            keyPassword System.getenv('MK_KEY_PASSWORD')
+            storeFile file('../kb-movies-release-key.jks')
+            storePassword System.getenv('KB_KEYSTORE_PASSWORD')
+            keyAlias System.getenv('KB_KEY_ALIAS')
+            keyPassword System.getenv('KB_KEY_PASSWORD')
         }
     }
 

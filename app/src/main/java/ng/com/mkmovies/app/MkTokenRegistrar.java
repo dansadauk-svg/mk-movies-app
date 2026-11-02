@@ -21,23 +21,29 @@ public final class MkTokenRegistrar {
     private static final String PREFS = "mk_movies_fcm_registration";
     private static final String KEY_TOKEN = "last_token";
     private static final String KEY_VERSION = "last_version";
+    private static final String KEY_PERMISSION = "last_permission";
     private static final String KEY_SUCCESS_AT = "last_success_at";
     private static final String KEY_ATTEMPT_AT = "last_attempt_at";
     private static final long SUCCESS_REFRESH_MS = 24L * 60L * 60L * 1000L;
-    private static final long RETRY_COOLDOWN_MS = 30L * 60L * 1000L;
+    private static final long RETRY_COOLDOWN_MS = 5L * 60L * 1000L;
 
     private MkTokenRegistrar() {}
 
     public static void registerTokenAsync(final Context context, final String token) {
+        registerTokenAsync(context, token, "granted");
+    }
+
+    public static void registerTokenAsync(final Context context, final String token, final String permission) {
         if (context == null || token == null || token.length() < 40) return;
         final Context appContext = context.getApplicationContext();
-        if (!shouldRegister(appContext, token)) return;
+        final String safePermission = "denied".equals(permission) ? "denied" : "granted";
+        if (!shouldRegister(appContext, token, safePermission)) return;
         markAttempt(appContext);
         new Thread(new Runnable() {
             @Override
             public void run() {
-                boolean ok = registerToken(token);
-                if (ok) markSuccess(appContext, token);
+                boolean ok = registerToken(token, safePermission);
+                if (ok) markSuccess(appContext, token, safePermission);
             }
         }).start();
     }
@@ -48,26 +54,28 @@ public final class MkTokenRegistrar {
         new Thread(new Runnable() {
             @Override
             public void run() {
-                registerToken(token);
+                registerToken(token, "granted");
             }
         }).start();
     }
 
-    private static boolean shouldRegister(Context context, String token) {
+    private static boolean shouldRegister(Context context, String token, String permission) {
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         long now = System.currentTimeMillis();
         String oldToken = prefs.getString(KEY_TOKEN, "");
         String oldVersion = prefs.getString(KEY_VERSION, "");
+        String oldPermission = prefs.getString(KEY_PERMISSION, "");
         long successAt = prefs.getLong(KEY_SUCCESS_AT, 0L);
         long attemptAt = prefs.getLong(KEY_ATTEMPT_AT, 0L);
 
         boolean sameToken = token.equals(oldToken);
         boolean sameVersion = BuildConfig.VERSION_NAME.equals(oldVersion);
-        if (sameToken && sameVersion && successAt > 0 && (now - successAt) < SUCCESS_REFRESH_MS) {
+        boolean samePermission = permission.equals(oldPermission);
+        if (sameToken && sameVersion && samePermission && successAt > 0 && (now - successAt) < SUCCESS_REFRESH_MS) {
             Log.d(TAG, "Skipping token registration; token already registered recently.");
             return false;
         }
-        if ((now - attemptAt) < RETRY_COOLDOWN_MS) {
+        if (sameToken && sameVersion && samePermission && (now - attemptAt) < RETRY_COOLDOWN_MS) {
             Log.d(TAG, "Skipping token registration; retry cooldown active.");
             return false;
         }
@@ -81,21 +89,22 @@ public final class MkTokenRegistrar {
                 .apply();
     }
 
-    private static void markSuccess(Context context, String token) {
+    private static void markSuccess(Context context, String token, String permission) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .edit()
                 .putString(KEY_TOKEN, token)
                 .putString(KEY_VERSION, BuildConfig.VERSION_NAME)
+                .putString(KEY_PERMISSION, permission)
                 .putLong(KEY_SUCCESS_AT, System.currentTimeMillis())
                 .apply();
     }
 
-    private static boolean registerToken(String token) {
+    private static boolean registerToken(String token, String permission) {
         HttpURLConnection connection = null;
         try {
             JSONObject body = new JSONObject();
             body.put("token", token);
-            body.put("permission", "granted");
+            body.put("permission", permission);
             body.put("source", "native-android");
             body.put("package", BuildConfig.APPLICATION_ID);
             body.put("app_version", BuildConfig.VERSION_NAME);

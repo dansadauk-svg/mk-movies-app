@@ -28,7 +28,7 @@ import java.util.Map;
 
 public class MkFirebaseMessagingService extends FirebaseMessagingService {
     private static final String TAG = "MKMoviesFCMService";
-    public static final String CHANNEL_ID = "mk_movies_alerts_v2";
+    public static final String CHANNEL_ID = "mk_movies_alerts_v3";
     public static final String ALL_USERS_TOPIC = "mk_movies_all";
 
     @Override
@@ -36,7 +36,7 @@ public class MkFirebaseMessagingService extends FirebaseMessagingService {
         super.onNewToken(token);
         FirebaseMessaging.getInstance().subscribeToTopic(ALL_USERS_TOPIC)
                 .addOnFailureListener(error -> Log.w(TAG, "Could not restore all-user topic subscription", error));
-        MkTokenRegistrar.registerTokenAsync(getApplicationContext(), token);
+        MkTokenRegistrar.registerTokenAsync(getApplicationContext(), token, notificationPermission());
     }
 
     @Override
@@ -45,7 +45,7 @@ public class MkFirebaseMessagingService extends FirebaseMessagingService {
         FirebaseMessaging.getInstance().subscribeToTopic(ALL_USERS_TOPIC)
                 .addOnFailureListener(error -> Log.w(TAG, "Could not refresh all-user topic subscription", error));
         FirebaseMessaging.getInstance().getToken().addOnSuccessListener(token ->
-                MkTokenRegistrar.registerTokenAsync(getApplicationContext(), token)
+                MkTokenRegistrar.registerTokenAsync(getApplicationContext(), token, notificationPermission())
         );
     }
 
@@ -73,7 +73,21 @@ public class MkFirebaseMessagingService extends FirebaseMessagingService {
             }
         }
 
-        showNotification(title, body, url, imageUrl);
+        final int notificationId = (int) (System.currentTimeMillis() & 0x7fffffff);
+        showNotification(title, body, url, null, notificationId);
+
+        if (imageUrl != null && imageUrl.startsWith("http")) {
+            final String finalTitle = title;
+            final String finalBody = body;
+            final String finalUrl = url;
+            final String finalImageUrl = imageUrl;
+            new Thread(() -> {
+                Bitmap bigPicture = loadBitmap(finalImageUrl);
+                if (bigPicture != null) {
+                    showNotification(finalTitle, finalBody, finalUrl, bigPicture, notificationId);
+                }
+            }, "MKMoviesNotificationImage").start();
+        }
     }
 
     private String value(Map<String, String> data, String key, String fallback) {
@@ -108,7 +122,15 @@ public class MkFirebaseMessagingService extends FirebaseMessagingService {
         }
     }
 
-    private void showNotification(String title, String body, String url, String imageUrl) {
+    private String notificationPermission() {
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            return "denied";
+        }
+        return NotificationManagerCompat.from(this).areNotificationsEnabled() ? "granted" : "denied";
+    }
+
+    private void showNotification(String title, String body, String url, Bitmap bigPicture, int notificationId) {
         createNotificationChannel();
 
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -139,10 +161,10 @@ public class MkFirebaseMessagingService extends FirebaseMessagingService {
                 .setDefaults(NotificationCompat.DEFAULT_ALL)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setCategory(NotificationCompat.CATEGORY_PROMO)
+                .setOnlyAlertOnce(true)
                 .setAutoCancel(true)
                 .setContentIntent(pendingIntent);
 
-        Bitmap bigPicture = loadBitmap(imageUrl);
         if (bigPicture != null) {
             builder.setLargeIcon(bigPicture)
                     .setStyle(new NotificationCompat.BigPictureStyle().bigPicture(bigPicture).setSummaryText(body));
@@ -150,7 +172,7 @@ public class MkFirebaseMessagingService extends FirebaseMessagingService {
             builder.setStyle(new NotificationCompat.BigTextStyle().bigText(body));
         }
 
-        NotificationManagerCompat.from(this).notify((int) System.currentTimeMillis(), builder.build());
+        NotificationManagerCompat.from(this).notify(notificationId, builder.build());
     }
 
     private void createNotificationChannel() {
