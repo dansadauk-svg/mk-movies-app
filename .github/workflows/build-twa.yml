@@ -57,25 +57,20 @@ jobs:
 
       - name: Prepare and verify Play upload key
         env:
-          KB_KEYSTORE_BASE64: ${{ secrets.KB_KEYSTORE_BASE64 }}
-          KB_KEYSTORE_PASSWORD: ${{ secrets.KB_KEYSTORE_PASSWORD }}
-          KB_KEY_ALIAS: ${{ secrets.KB_KEY_ALIAS }}
+          MK_KEYSTORE_BASE64: ${{ secrets.MK_KEYSTORE_BASE64 }}
+          MK_KEYSTORE_PASSWORD: ${{ secrets.MK_KEYSTORE_PASSWORD }}
         run: |
-          if [ -z "$KB_KEYSTORE_BASE64" ]; then
-            echo "::error::Missing repository secret: KB_KEYSTORE_BASE64"
+          if [ -z "$MK_KEYSTORE_BASE64" ]; then
+            echo "::error::Missing repository secret: MK_KEYSTORE_BASE64"
             exit 1
           fi
-          if [ -z "$KB_KEYSTORE_PASSWORD" ]; then
-            echo "::error::Missing repository secret: KB_KEYSTORE_PASSWORD"
+          if [ -z "$MK_KEYSTORE_PASSWORD" ]; then
+            echo "::error::Missing repository secret: MK_KEYSTORE_PASSWORD"
             exit 1
           fi
-          if [ -z "$KB_KEY_ALIAS" ]; then
-            echo "::error::Missing repository secret: KB_KEY_ALIAS"
-            exit 1
-          fi
-          printf '%s' "$KB_KEYSTORE_BASE64" | base64 --decode > kb-movies-release-key.jks
+          printf '%s' "$MK_KEYSTORE_BASE64" | base64 --decode > mk-movies-release-key.jks
           EXPECTED_SHA1="59:0D:C2:C2:11:7A:04:5B:8A:03:44:24:2D:A4:C4:32:43:3F:A3:05"
-          ACTUAL_SHA1="$(keytool -list -v -keystore kb-movies-release-key.jks -storepass "$KB_KEYSTORE_PASSWORD" -alias "$KB_KEY_ALIAS" 2>/dev/null | sed -n 's/^[[:space:]]*SHA1: //p' | head -n 1 | tr -d '\r')"
+          ACTUAL_SHA1="$(keytool -list -v -keystore mk-movies-release-key.jks -storepass "$MK_KEYSTORE_PASSWORD" -alias "mk_movies" 2>/dev/null | sed -n 's/^[[:space:]]*SHA1: //p' | head -n 1 | tr -d '\r')"
           if [ "$ACTUAL_SHA1" != "$EXPECTED_SHA1" ]; then
             echo "::error::Wrong Play upload key. Expected SHA1 $EXPECTED_SHA1 but received ${ACTUAL_SHA1:-unreadable key}."
             exit 1
@@ -84,20 +79,15 @@ jobs:
 
       - name: Build release APK and AAB
         env:
-          KB_KEYSTORE_PASSWORD: ${{ secrets.KB_KEYSTORE_PASSWORD }}
-          KB_KEY_PASSWORD: ${{ secrets.KB_KEY_PASSWORD }}
-          KB_KEY_ALIAS: ${{ secrets.KB_KEY_ALIAS }}
+          MK_KEYSTORE_PASSWORD: ${{ secrets.MK_KEYSTORE_PASSWORD }}
+          MK_KEY_PASSWORD: ${{ secrets.MK_KEY_PASSWORD }}
         run: |
-          if [ -z "$KB_KEYSTORE_PASSWORD" ]; then
-            echo "::error::Missing repository secret: KB_KEYSTORE_PASSWORD"
+          if [ -z "$MK_KEYSTORE_PASSWORD" ]; then
+            echo "::error::Missing repository secret: MK_KEYSTORE_PASSWORD"
             exit 1
           fi
-          if [ -z "$KB_KEY_PASSWORD" ]; then
-            echo "::error::Missing repository secret: KB_KEY_PASSWORD"
-            exit 1
-          fi
-          if [ -z "$KB_KEY_ALIAS" ]; then
-            echo "::error::Missing repository secret: KB_KEY_ALIAS"
+          if [ -z "$MK_KEY_PASSWORD" ]; then
+            echo "::error::Missing repository secret: MK_KEY_PASSWORD"
             exit 1
           fi
           gradle --version
