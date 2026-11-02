@@ -10,12 +10,14 @@ import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.media.AudioAttributes;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
 import android.os.IBinder;
 import android.os.ParcelFileDescriptor;
 import android.provider.MediaStore;
+import android.provider.Settings;
 import android.util.Log;
 import android.webkit.URLUtil;
 
@@ -47,8 +49,10 @@ public class MovieDownloadService extends Service {
     private static final String EXTRA_USER_AGENT = "user_agent";
     private static final String EXTRA_COOKIES = "cookies";
     private static final String EXTRA_REFERER = "referer";
-    public static final String CHANNEL_ID = "mk_movie_downloads_v4";
-    private static final int NOTIFICATION_ID = 4302;
+    public static final String PROGRESS_CHANNEL_ID = "mk_movie_downloads_progress_v5";
+    public static final String RESULT_CHANNEL_ID = "mk_movie_downloads_complete_v5";
+    private static final int PROGRESS_NOTIFICATION_ID = 4302;
+    private static final int RESULT_NOTIFICATION_ID = 4303;
     private static final String PREFS = "mk_movie_download_state";
 
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
@@ -93,7 +97,7 @@ public class MovieDownloadService extends Service {
         }
         if (ACTION_START.equals(action) && intent != null) {
             if (running) {
-                startForeground(NOTIFICATION_ID, buildRunningNotification());
+                startForeground(PROGRESS_NOTIFICATION_ID, buildRunningNotification());
                 return START_REDELIVER_INTENT;
             }
             String incomingUrl = safe(intent.getStringExtra(EXTRA_URL));
@@ -128,7 +132,7 @@ public class MovieDownloadService extends Service {
         pauseRequested.set(false);
         cancelRequested.set(false);
         running = true;
-        startForeground(NOTIFICATION_ID, buildRunningNotification());
+        startForeground(PROGRESS_NOTIFICATION_ID, buildRunningNotification());
         worker.execute(this::download);
     }
 
@@ -180,7 +184,7 @@ public class MovieDownloadService extends Service {
                     long now = System.currentTimeMillis();
                     if (now - lastNotify >= 650L) {
                         state.edit().putLong("downloaded", written).putLong("total", total).apply();
-                        notifications.notify(NOTIFICATION_ID, buildRunningNotification());
+                        notifications.notify(PROGRESS_NOTIFICATION_ID, buildRunningNotification());
                         lastNotify = now;
                     }
                 }
@@ -198,8 +202,13 @@ public class MovieDownloadService extends Service {
             activeConnection = null;
             if (connection != null) connection.disconnect();
             running = false;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) stopForeground(STOP_FOREGROUND_DETACH);
-            else stopForeground(false);
+            boolean keepPausedNotification = "paused".equals(state.getString("status", ""));
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(keepPausedNotification ? STOP_FOREGROUND_DETACH : STOP_FOREGROUND_REMOVE);
+            } else {
+                stopForeground(!keepPausedNotification);
+            }
+            if (!keepPausedNotification) notifications.cancel(PROGRESS_NOTIFICATION_ID);
             stopSelf();
         }
     }
@@ -219,7 +228,8 @@ public class MovieDownloadService extends Service {
         if (connection != null) connection.disconnect();
         deleteDestination();
         state.edit().clear().apply();
-        notifications.cancel(NOTIFICATION_ID);
+        notifications.cancel(PROGRESS_NOTIFICATION_ID);
+        notifications.cancel(RESULT_NOTIFICATION_ID);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) stopForeground(STOP_FOREGROUND_REMOVE);
         else stopForeground(true);
         stopSelf();
@@ -236,16 +246,18 @@ public class MovieDownloadService extends Service {
         }
         String title = displayTitle(state.getString(EXTRA_FILENAME, "Movie"));
         state.edit().clear().apply();
-        notifications.notify(NOTIFICATION_ID, baseBuilder().setContentTitle(title + " downloaded")
+        notifications.notify(RESULT_NOTIFICATION_ID, resultBuilder().setContentTitle(title + " downloaded")
                 .setContentText("Saved in Downloads/MK Movies").setContentIntent(openDownloadsIntent())
-                .setProgress(0, 0, false).setOngoing(false).setAutoCancel(true).build());
+                .setCategory(NotificationCompat.CATEGORY_STATUS)
+                .setProgress(0, 0, false).setOngoing(false).setAutoCancel(true)
+                .setOnlyAlertOnce(false).build());
     }
 
     private Notification buildRunningNotification() {
         String filename = state.getString(EXTRA_FILENAME, "Movie");
         long downloaded = state.getLong("downloaded", 0L);
         long total = state.getLong("total", 0L);
-        NotificationCompat.Builder builder = baseBuilder()
+        NotificationCompat.Builder builder = progressBuilder()
                 .setContentTitle("Downloading " + displayTitle(filename))
                 .setContentText(formatProgress(downloaded, total)).setContentIntent(openDownloadsIntent())
                 .setSubText("Pause or cancel below")
@@ -259,25 +271,43 @@ public class MovieDownloadService extends Service {
 
     private void showPaused() {
         String filename = state.getString(EXTRA_FILENAME, "Movie");
-        Notification notification = baseBuilder().setContentTitle(displayTitle(filename) + " paused")
+        Notification notification = progressBuilder().setContentTitle(displayTitle(filename) + " paused")
                 .setContentText(formatProgress(state.getLong("downloaded", 0L), state.getLong("total", 0L)))
                 .setContentIntent(openDownloadsIntent()).setOnlyAlertOnce(true).setOngoing(false)
                 .addAction(android.R.drawable.ic_media_play, "Resume", serviceAction(ACTION_RESUME, 13))
                 .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancel", serviceAction(ACTION_CANCEL, 14)).build();
-        notifications.notify(NOTIFICATION_ID, notification);
+        notifications.notify(PROGRESS_NOTIFICATION_ID, notification);
     }
 
     private void showFailure(String message) {
         String filename = state.getString(EXTRA_FILENAME, "Movie");
-        notifications.notify(NOTIFICATION_ID, baseBuilder()
+        notifications.notify(RESULT_NOTIFICATION_ID, resultBuilder()
                 .setContentTitle("Couldn’t download " + displayTitle(filename)).setContentText(message)
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(message))
-                .setContentIntent(openAppIntent()).setOngoing(false).setAutoCancel(true).build());
+                .setContentIntent(openAppIntent()).setCategory(NotificationCompat.CATEGORY_ERROR)
+                .setOngoing(false).setAutoCancel(true).setOnlyAlertOnce(false).build());
     }
 
-    private NotificationCompat.Builder baseBuilder() {
-        return new NotificationCompat.Builder(this, CHANNEL_ID).setSmallIcon(R.drawable.ic_stat_mk)
-                .setCategory(NotificationCompat.CATEGORY_PROGRESS).setPriority(NotificationCompat.PRIORITY_LOW)
+    private NotificationCompat.Builder progressBuilder() {
+        return new NotificationCompat.Builder(this, PROGRESS_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_stat_mk)
+                .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setDefaults(NotificationCompat.DEFAULT_ALL)
+                .setSound(Settings.System.DEFAULT_NOTIFICATION_URI)
+                .setVibrate(new long[]{0L, 250L, 150L, 250L})
+                .setSilent(false)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC);
+    }
+
+    private NotificationCompat.Builder resultBuilder() {
+        return new NotificationCompat.Builder(this, RESULT_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_stat_mk)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setDefaults(NotificationCompat.DEFAULT_ALL)
+                .setSound(Settings.System.DEFAULT_NOTIFICATION_URI)
+                .setVibrate(new long[]{0L, 350L, 150L, 350L})
+                .setSilent(false)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC);
     }
 
@@ -378,11 +408,38 @@ public class MovieDownloadService extends Service {
 
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
-        NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "MK Movies downloads", NotificationManager.IMPORTANCE_LOW);
-        channel.setDescription("Movie download progress with Pause, Resume and Cancel controls");
-        channel.setSound(null, null);
-        channel.enableVibration(false);
-        notifications.createNotificationChannel(channel);
+        AudioAttributes soundAttributes = new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build();
+
+        NotificationChannel progressChannel = new NotificationChannel(
+                PROGRESS_CHANNEL_ID,
+                "MK Movies download progress",
+                NotificationManager.IMPORTANCE_HIGH
+        );
+        progressChannel.setDescription("Audible movie download progress with Pause, Resume and Cancel controls");
+        progressChannel.setSound(Settings.System.DEFAULT_NOTIFICATION_URI, soundAttributes);
+        progressChannel.enableVibration(true);
+        progressChannel.setVibrationPattern(new long[]{0L, 250L, 150L, 250L});
+        progressChannel.enableLights(true);
+        progressChannel.setLightColor(0xFF1B5EAA);
+        progressChannel.setShowBadge(true);
+        notifications.createNotificationChannel(progressChannel);
+
+        NotificationChannel resultChannel = new NotificationChannel(
+                RESULT_CHANNEL_ID,
+                "MK Movies download completed",
+                NotificationManager.IMPORTANCE_HIGH
+        );
+        resultChannel.setDescription("Sound and vibration when an MK Movies download completes or fails");
+        resultChannel.setSound(Settings.System.DEFAULT_NOTIFICATION_URI, soundAttributes);
+        resultChannel.enableVibration(true);
+        resultChannel.setVibrationPattern(new long[]{0L, 350L, 150L, 350L});
+        resultChannel.enableLights(true);
+        resultChannel.setLightColor(0xFF1B5EAA);
+        resultChannel.setShowBadge(true);
+        notifications.createNotificationChannel(resultChannel);
     }
 
     private static void setHeader(HttpURLConnection connection, String name, String value) {

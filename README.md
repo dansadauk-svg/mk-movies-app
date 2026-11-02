@@ -1,4 +1,4 @@
-# MK Movies Android GitHub Build Pack v2.10.1
+# MK Movies Android GitHub Build Pack v2.10.2
 
 This pack builds the MK Movies Android app from GitHub Actions. It uses a Trusted Web Activity so the app opens `https://mkmovies.com.ng` without the normal browser address bar after Digital Asset Links verification.
 
@@ -41,11 +41,11 @@ Paste the copied value into the `MK_KEYSTORE_BASE64` GitHub secret. The workflow
 
 1. Open the GitHub repository.
 2. Go to **Actions**.
-3. Select **Build MK Movies v2.10.1 Named Resumable Downloads APK/AAB**.
+3. Select **Build MK Movies v2.10.2 Audible Downloads APK/AAB**.
 4. Click **Run workflow**.
 5. Download the generated APK/AAB from the workflow artifacts.
 
-The output files are named `MK-Movies-v2.10.1-release.apk` and `MK-Movies-v2.10.1-play-console.aab`. Upload only the Play Console AAB to Google Play.
+The output files are named `MK-Movies-v2.10.2-release.apk` and `MK-Movies-v2.10.2-play-console.aab`. Upload only the Play Console AAB to Google Play.
 
 ## Included app features
 
@@ -111,6 +111,15 @@ Movie download button clicks now start Android DownloadManager instead of openin
 - Sends the real Android notification-permission state to WordPress and re-registers when that state changes.
 - Supports the older `OPEN_MOVIE` click action while the updated sender uses normal launcher routing.
 
+## v2.10.2 Audible Android Download Notifications
+
+- Uses a new high-importance `mk_movie_downloads_progress_v5` channel so Android treats download progress as an alerting notification, not a silent one.
+- Plays the normal Android notification sound and vibrates when a movie download starts.
+- Uses a separate `mk_movie_downloads_complete_v5` channel so completion and failure alerts sound and vibrate reliably.
+- Progress refreshes use `setOnlyAlertOnce(true)`, preventing repeated sounds while the progress bar updates.
+- Keeps the real movie title, Pause, Resume and Cancel controls from v2.10.1.
+- Targets Android 16 / API 36 and releases as versionName 2.10.2, versionCode 23.
+
 ## v2.10.1 Named Resumable Download Fix
 
 - Resolves the movie title directly from the current movie page, Open Graph title, movie card and download-button metadata.
@@ -120,5 +129,5 @@ Movie download button clicks now start Android DownloadManager instead of openin
 - Continues a paused download with HTTP Range requests instead of restarting from zero when the storage server supports ranges.
 - Cancelling removes the incomplete file.
 - Saves completed movies in `Downloads/MK Movies`.
-- Uses a fresh `mk_movie_downloads_v4` notification channel so the new progress controls are not mixed with an older download notification.
+- Used the earlier `mk_movie_downloads_v4` notification channel for the first resumable-download release.
 - Targets Android 16 / API 36 and releases as versionName 2.10.1, versionCode 22.
